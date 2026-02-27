@@ -11,12 +11,133 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: ZaraScreen(),
+      home: AuthScreen(),
     );
   }
 }
 
+// --- GİRİŞ / KAYIT EKRANI ---
+class AuthScreen extends StatefulWidget {
+  @override
+  _AuthScreenState createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  bool isLogin = true; 
+  bool isLoading = false;
+  
+  TextEditingController usernameController = TextEditingController();
+  TextEditingController passwordController = TextEditingController();
+
+  void authenticate() async {
+    setState(() { isLoading = true; });
+
+    String endpoint = isLogin ? "login" : "register";
+    var address = Uri.parse("http://localhost:8080/api/auth/$endpoint");
+
+    try {
+      var response = await http.post(
+        address,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "username": usernameController.text,
+          "password": passwordController.text
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        if (isLogin) {
+          int userId = int.parse(response.body);
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => ZaraScreen(userId: userId)),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Kayıt başarılı! Lütfen giriş yapın.")));
+          setState(() { isLogin = true; });
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(response.body)));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Bağlantı hatası!")));
+    }
+
+    setState(() { isLoading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                isLogin ? "Giriş Yap" : "Kayıt Ol",
+                style: TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 40),
+              TextField(
+                controller: usernameController,
+                style: TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: "Kullanıcı Adı",
+                  labelStyle: TextStyle(color: Colors.white54),
+                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
+                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                ),
+              ),
+              SizedBox(height: 20),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                style: TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: "Şifre",
+                  labelStyle: TextStyle(color: Colors.white54),
+                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
+                  focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                ),
+              ),
+              SizedBox(height: 30),
+              isLoading 
+                ? CircularProgressIndicator(color: Colors.white)
+                : ElevatedButton(
+                    onPressed: authenticate,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white, 
+                      foregroundColor: Colors.black,
+                      minimumSize: Size(double.infinity, 50)
+                    ),
+                    child: Text(isLogin ? "Giriş" : "Kayıt Ol", style: TextStyle(fontSize: 18)),
+                  ),
+              SizedBox(height: 20),
+              TextButton(
+                onPressed: () {
+                  setState(() { isLogin = !isLogin; });
+                },
+                child: Text(
+                  isLogin ? "Hesabın yok mu? Kayıt Ol" : "Zaten hesabın var mı? Giriş Yap",
+                  style: TextStyle(color: Colors.blue.shade300),
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- ANA ARAMA EKRANI ---
 class ZaraScreen extends StatefulWidget {
+  final int userId; 
+  ZaraScreen({required this.userId}); 
+
   @override
   _ZaraScreenState createState() => _ZaraScreenState();
 }
@@ -78,14 +199,38 @@ class _ZaraScreenState extends State<ZaraScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: TextStyle(color: Colors.white))));
   }
 
+  void showTopNotification(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 12),
+            Expanded(child: Text(message, style: TextStyle(color: Colors.white, fontSize: 16))),
+          ],
+        ),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        // Bildirimi ekranın en üstüne iten sihirli kısım:
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 150, 
+          left: 20, 
+          right: 20
+        ),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   void addToList() async {
     if (selectedSize == "") {
-      showError("Please select a size");
+      showError("Lütfen bir beden seçin");
       return;
     }
 
     try {
-      var address = Uri.parse("http://localhost:8080/api/products/save");
+      var address = Uri.parse("http://localhost:8080/api/products/save/${widget.userId}");
       var response = await http.post(
         address,
         headers: {"Content-Type": "application/json"},
@@ -100,25 +245,13 @@ class _ZaraScreenState extends State<ZaraScreen> {
       );
 
       if (response.statusCode == 200) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: Colors.grey[900],
-            title: Text("Success", style: TextStyle(color: Colors.white)),
-            content: Text("Added to list", style: TextStyle(color: Colors.white70)),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text("OK", style: TextStyle(color: Colors.white)),
-              )
-            ],
-          ),
-        );
+        // ESKİ ALERT DIALOG SİLİNDİ, YERİNE ÜST BİLDİRİM EKLENDİ!
+        showTopNotification("Ürün dolabına eklendi!", Colors.green.shade600);
       } else {
-        showError("Could not save");
+        showError("Hata: ${response.body}");
       }
     } catch (e) {
-      showError("No internet connection");
+      showError("Bağlantı hatası");
     }
   }
 
@@ -145,7 +278,20 @@ class _ZaraScreenState extends State<ZaraScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => ClosetScreen()),
+                MaterialPageRoute(builder: (context) => ClosetScreen(userId: widget.userId)),
+              );
+            },
+          ),
+          // --- YENİ EKLENEN ÇIKIŞ (LOGOUT) BUTONU ---
+          IconButton(
+            icon: Icon(Icons.logout, color: Colors.redAccent), // Kırmızı şık bir çıkış ikonu
+            onPressed: () {
+              // pushAndRemoveUntil: Kullanıcıyı AuthScreen'e atar ve arkadaki tüm sayfa geçmişini yok eder!
+              // Böylece Android'de fiziksel 'Geri' tuşuna bassa bile hesabın içine geri dönemez.
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => AuthScreen()),
+                (Route<dynamic> route) => false, // Tüm geçmişi silme komutu
               );
             },
           )
@@ -186,7 +332,7 @@ class _ZaraScreenState extends State<ZaraScreen> {
               Wrap(
                 spacing: 8.0,
                 children: sizes.map((size) {
-                  bool inStock = size.contains("Stokta") || size.contains("In Stock");
+                  bool inStock = size.contains("Stokta") || size.contains("In Stock") || size.contains("Az Stok");
                   String cleanSize = size.replaceAll("(Stokta)", "").replaceAll("(Tükendi)", "").replaceAll("In Stock", "").replaceAll("Out of Stock", "").trim();
                   return ChoiceChip(
                     label: Text(cleanSize, style: TextStyle(color: Colors.black)),
@@ -216,7 +362,11 @@ class _ZaraScreenState extends State<ZaraScreen> {
   }
 }
 
+// --- DOLABIM EKRANI ---
 class ClosetScreen extends StatefulWidget {
+  final int userId; 
+  ClosetScreen({required this.userId});
+
   @override
   _ClosetScreenState createState() => _ClosetScreenState();
 }
@@ -233,31 +383,57 @@ class _ClosetScreenState extends State<ClosetScreen> {
 
   void fetchCloset() async {
     try {
-      var address = Uri.parse("http://localhost:8080/api/products/list");
+      var address = Uri.parse("http://localhost:8080/api/products/list/${widget.userId}");
       var response = await http.get(address);
       if (response.statusCode == 200) {
         setState(() {
           items = jsonDecode(utf8.decode(response.bodyBytes));
           isLoading = false;
         });
+      } else {
+        setState(() { isLoading = false; });
       }
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() { isLoading = false; });
     }
   }
 
-  void deleteItem(String url) async {
+ void showTopNotification(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.delete_outline, color: Colors.white),
+            SizedBox(width: 12),
+            Expanded(child: Text(message, style: TextStyle(color: Colors.white, fontSize: 16))),
+          ],
+        ),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 150, 
+          left: 20, 
+          right: 20
+        ),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void deleteItem(String url, String size) async {
     try {
       String encodedUrl = Uri.encodeComponent(url);
-      var address = Uri.parse("http://localhost:8080/api/products/delete?url=$encodedUrl");
+      String encodedSize = Uri.encodeComponent(size);
+      
+      var address = Uri.parse("http://localhost:8080/api/products/delete/${widget.userId}?url=$encodedUrl&size=$encodedSize");
       var response = await http.delete(address);
       if (response.statusCode == 200) {
-        fetchCloset();
+        fetchCloset(); 
+        // SİLİNCE EKRANIN ÜSTÜNDEN KIRMIZI BİLDİRİM DÜŞECEK
+        showTopNotification("Ürün dolabından silindi!", Colors.red.shade600);
       }
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 
   @override
@@ -271,7 +447,9 @@ class _ClosetScreenState extends State<ClosetScreen> {
       ),
       body: isLoading
           ? Center(child: CircularProgressIndicator(color: Colors.white))
-          : ListView.builder(
+          : items.isEmpty 
+              ? Center(child: Text("Dolabın şu an boş", style: TextStyle(color: Colors.white54)))
+              : ListView.builder(
               itemCount: items.length,
               itemBuilder: (context, index) {
                 var item = items[index];
@@ -279,16 +457,17 @@ class _ClosetScreenState extends State<ClosetScreen> {
                   color: Colors.grey[900],
                   margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: ListTile(
-                    leading: item["imageUrl"] != null 
+                    leading: item["imageUrl"] != null && item["imageUrl"] != "Yok"
                         ? Image.network(item["imageUrl"], width: 50, height: 50, fit: BoxFit.cover)
                         : Icon(Icons.image, color: Colors.white),
                     title: Text(item["name"] ?? "", style: TextStyle(color: Colors.white)),
                     subtitle: Text("${item["price"]} TL - Size: ${item["targetSize"] ?? ""}", style: TextStyle(color: Colors.green)),
                     trailing: IconButton(
                       icon: Icon(Icons.delete, color: Colors.red.shade300),
-                      onPressed: () => deleteItem(item["url"]),
+                      onPressed: () => deleteItem(item["url"] ?? "", item["targetSize"] ?? ""
                     ),
                   ),
+                )
                 );
               },
             ),
@@ -296,6 +475,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
   }
 }
 
+// --- BİLDİRİMLER EKRANI ---
 class NotificationsScreen extends StatefulWidget {
   @override
   _NotificationsScreenState createState() => _NotificationsScreenState();
@@ -322,9 +502,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         });
       }
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() { isLoading = false; });
     }
   }
 
