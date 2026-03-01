@@ -2,10 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-void main() {
-  runApp(MyApp());
-}
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart'; 
+import 'config.dart';
 
+void main() async {
+  // Flutter motorunu dış servislere (Firebase'e) hazırlıyoruz
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+ // Bildirim göndermek için kullanıcıdan izin istiyoruz
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  // Token alma işlemini try-catch içine alıyoruz ki simülatörde uygulama çakılmasın
+  try {
+    // Apple'ın APNs token'ı vermesi bazen gecikebiliyor, kısa bir bekleme süresi koymak iyi bir taktiktir
+    await Future.delayed(const Duration(seconds: 2)); 
+    String? token = await messaging.getToken();
+    print("🔥 CİHAZ TOKEN NUMARASI (FCM): $token");
+  } catch (e) {
+    print("⚠️ Token alınamadı (iOS Simülatör kısıtlaması): $e");
+  }
+
+  // Kendi uygulamanı başlattığın satır
+  runApp(MyApp());
+
+  // Kendi uygulamanı başlattığın satır 
+  runApp(MyApp()); 
+}
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -32,8 +65,18 @@ class _AuthScreenState extends State<AuthScreen> {
   void authenticate() async {
     setState(() { isLoading = true; });
 
+    // --- 1. YENİ EKLENEN KISIM: FCM Token'ı Firebase'den Alıyoruz ---
+    String? fcmToken = "";
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+      print("Giriş yaparken alınan Token: $fcmToken");
+    } catch (e) {
+      print("Token alınamadı: $e");
+    }
+    // ----------------------------------------------------------------
+
     String endpoint = isLogin ? "login" : "register";
-    var address = Uri.parse("http://localhost:8080/api/auth/$endpoint");
+    var address = Uri.parse("${ApiConfig.baseUrl}/auth/$endpoint");
 
     try {
       var response = await http.post(
@@ -41,7 +84,8 @@ class _AuthScreenState extends State<AuthScreen> {
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "username": usernameController.text,
-          "password": passwordController.text
+          "password": passwordController.text,
+          "fcmToken": fcmToken // --- 2. YENİ EKLENEN KISIM: Token'ı Java'ya Gönderiyoruz ---
         }),
       );
 
@@ -65,7 +109,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
     setState(() { isLoading = false; });
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -152,6 +195,7 @@ class _ZaraScreenState extends State<ZaraScreen> {
   String selectedSize = "";
   List<String> sizes = [];
   bool isWaiting = false;
+  bool isSelectedSizeInStock = false;
 
   void fetchDetails() async {
     setState(() {
@@ -161,7 +205,7 @@ class _ZaraScreenState extends State<ZaraScreen> {
     });
 
     try {
-      var address = Uri.parse("http://localhost:8080/api/products/preview");
+      var address = Uri.parse("${ApiConfig.baseUrl}/products/preview");
       var response = await http.post(
         address,
         headers: {"Content-Type": "application/json"},
@@ -212,7 +256,6 @@ class _ZaraScreenState extends State<ZaraScreen> {
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        // Bildirimi ekranın en üstüne iten sihirli kısım:
         margin: EdgeInsets.only(
           bottom: MediaQuery.of(context).size.height - 150, 
           left: 20, 
@@ -230,7 +273,7 @@ class _ZaraScreenState extends State<ZaraScreen> {
     }
 
     try {
-      var address = Uri.parse("http://localhost:8080/api/products/save/${widget.userId}");
+      var address = Uri.parse("${ApiConfig.baseUrl}/products/save/${widget.userId}");
       var response = await http.post(
         address,
         headers: {"Content-Type": "application/json"},
@@ -240,12 +283,11 @@ class _ZaraScreenState extends State<ZaraScreen> {
           "price": double.tryParse(cleanPrice) ?? 0.0,
           "imageUrl": image,
           "targetSize": selectedSize,
-          "inStockNotified": false
+          "inStockNotified": isSelectedSizeInStock
         }),
       );
 
       if (response.statusCode == 200) {
-        // ESKİ ALERT DIALOG SİLİNDİ, YERİNE ÜST BİLDİRİM EKLENDİ!
         showTopNotification("Ürün dolabına eklendi!", Colors.green.shade600);
       } else {
         showError("Hata: ${response.body}");
@@ -337,9 +379,10 @@ class _ZaraScreenState extends State<ZaraScreen> {
                   return ChoiceChip(
                     label: Text(cleanSize, style: TextStyle(color: Colors.black)),
                     selected: selectedSize == cleanSize,
-                    onSelected: (bool selected) {
+                    onSelected: (selected) {
                       setState(() {
                         selectedSize = selected ? cleanSize : "";
+                        isSelectedSizeInStock = selected ? inStock : false;
                       });
                     },
                     backgroundColor: inStock ? Colors.green.shade300 : Colors.red.shade300,
@@ -383,7 +426,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
 
   void fetchCloset() async {
     try {
-      var address = Uri.parse("http://localhost:8080/api/products/list/${widget.userId}");
+      var address = Uri.parse("${ApiConfig.baseUrl}/products/list/${widget.userId}");
       var response = await http.get(address);
       if (response.statusCode == 200) {
         setState(() {
@@ -426,7 +469,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
       String encodedUrl = Uri.encodeComponent(url);
       String encodedSize = Uri.encodeComponent(size);
       
-      var address = Uri.parse("http://localhost:8080/api/products/delete/${widget.userId}?url=$encodedUrl&size=$encodedSize");
+      var address = Uri.parse("${ApiConfig.baseUrl}/products/delete/${widget.userId}?url=$encodedUrl&size=$encodedSize");
       var response = await http.delete(address);
       if (response.statusCode == 200) {
         fetchCloset(); 
@@ -493,7 +536,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   void fetchNotifications() async {
     try {
-      var address = Uri.parse("http://localhost:8080/api/products/notifications");
+      var address = Uri.parse("${ApiConfig.baseUrl}/products/notifications");
       var response = await http.get(address);
       if (response.statusCode == 200) {
         setState(() {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "275304988180",
+    "project_id": "pricetracker-8b132",
+    "storage_bucket": "pricetracker-8b132.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:275304988180:android:d59d25506b9d7f77227101",
+        "android_client_info": {
+          "package_name": "com.example.price_tracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCItY2LhtFhOYCDR9Xi0Kg9ZrTWG14_1IA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
